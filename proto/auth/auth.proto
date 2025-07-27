@@ -24,6 +24,13 @@ service AuthService {
       body: "*" 
     }; 
   } 
+
+  // GetUserProfile retrieves the profile of the authenticated user.
+  rpc GetUserProfile(GetUserProfileRequest) returns (GetUserProfileResponse) {
+    option (google.api.http) = {
+      get: "/v1/profile"
+    };
+  }
 }
 
 message SignUpRequest { 
@@ -42,4 +49,12 @@ message SignInRequest {
 
 message SignInResponse { 
   string token = 1; // JWT token 
+}
+
+message GetUserProfileRequest {
+}
+
+message GetUserProfileResponse {
+  string user_id = 1;
+  string username = 2;
 }
