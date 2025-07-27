@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package auth; 
+
+option go_package = "coscup2025/proto/auth;auth";
+
+import "google/api/annotations.proto";
+
+// AuthService defines the authentication service. 
+
+service AuthService { 
+  // SignUp creates a new user account. 
+  rpc SignUp(SignUpRequest) returns (SignUpResponse) { 
+    option (google.api.http) = { 
+      post: "/v1/signup" 
+      body: "*" 
+    }; 
+  }
+
+  // SignIn authenticates a user and returns a JWT token. 
+  rpc SignIn(SignInRequest) returns (SignInResponse) { 
+    option (google.api.http) = { 
+      post: "/v1/signin" 
+      body: "*" 
+    }; 
+  } 
+}
+
+message SignUpRequest { 
+  string username = 1; 
+  string password = 2; 
+}
+
+message SignUpResponse { 
+  string user_id = 1; 
+}
+
+message SignInRequest { 
+  string username = 1; 
+  string password = 2; 
+}
+
+message SignInResponse { 
+  string token = 1; // JWT token 
+}
