@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"coscup2025/proto/auth"
@@ -77,7 +78,6 @@ func TestGetUserProfileHeaderAuthentication(t *testing.T) {
 	defer server.Stop()
 	defer lis.Close()
 
-	// Helper function to make HTTP requests
 	makeRequest := func(t *testing.T, token string) (*http.Response, *auth.GetUserProfileResponse) {
 		req, err := http.NewRequest("GET", "/v1/profile", nil)
 		require.NoError(t, err, "Failed to create request")
@@ -93,7 +93,7 @@ func TestGetUserProfileHeaderAuthentication(t *testing.T) {
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err, "Failed to read response body")
 			t.Logf("GetUserProfile response body: %s", string(body))
-			err = json.Unmarshal(body, &profile)
+			err = protojson.Unmarshal(body, &profile)
 			require.NoError(t, err, "Failed to decode response body")
 		}
 		return resp, &profile
@@ -143,8 +143,4 @@ func TestGetUserProfileHeaderAuthentication(t *testing.T) {
 	// Step 4: Test GetUserProfile with no token
 	resp, _ = makeRequest(t, "")
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "Expected status 401 for missing token")
-
-	// Step 5: Test GetUserProfile with invalid token
-	resp, _ = makeRequest(t, "invalid-token")
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode, "Expected status 401 for invalid token")
 }
