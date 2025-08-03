@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package media;
+
+option go_package = "coscup2025/proto/media;media";
+
+import "google/api/annotations.proto";
+
+// MediaService defines the media streaming service
+service MediaService {
+  // UploadVideo streams video chunks from client to server
+  rpc UploadVideo(stream UploadVideoRequest) returns (UploadVideoResponse) {
+    option (google.api.http) = {
+      post: "/v1/video/upload"
+      body: "*"
+    };
+  }
+
+  // DownloadVideo streams video chunks from server to client
+  rpc DownloadVideo(DownloadVideoRequest) returns (stream DownloadVideoResponse) {
+    option (google.api.http) = {
+      get: "/v1/video/download/{video_id}"
+    };
+  }
+}
+
+message UploadVideoRequest {
+  string video_id = 1;
+  bytes data = 2;
+  int64 sequence = 3;
+}
+
+message UploadVideoResponse {
+  string video_id = 1;
+  int64 total_bytes = 2;
+  VideoMetadata metadata = 3;
+}
+
+message DownloadVideoRequest {
+  string video_id = 1;
+}
+
+message VideoMetadata {
+  string uploader_id = 1;
+  string uploader_name = 2;
+  int64 upload_timestamp = 3;
+  string file_name = 4;
+  int64 file_size = 5;
+}
+
+message DownloadVideoResponse {
+  string video_id = 1;
+  bytes data = 2;
+  int64 sequence = 3;
+  VideoMetadata metadata = 4;
+}

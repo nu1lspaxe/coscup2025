@@ -2,185 +2,75 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 
-	"github.com/golang-jwt/jwt"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"golang.org/x/crypto/bcrypt"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
+
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
-	"coscup2025/proto/auth"
+	"coscup2025/auth"
+	"coscup2025/media"
+
+	pbAuth "coscup2025/proto/auth"
+	pbMedia "coscup2025/proto/media"
 )
 
-type user struct {
-	ID       string
-	Username string
-	Password string
-}
+func initTracer() func() {
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
 
-type authServer struct {
-	auth.UnimplementedAuthServiceServer
-	users  map[string]user
-	mu     sync.RWMutex
-	secret []byte
-}
-
-func NewAuthServer() *authServer {
-	return &authServer{
-		users:  make(map[string]user),
-		secret: []byte("my-secret-key"),
-	}
-}
-
-func (s *authServer) SignUp(ctx context.Context, req *auth.SignUpRequest) (*auth.SignUpResponse, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if req.Username == "" || req.Password == "" {
-		return nil, status.Error(codes.InvalidArgument, "username and password are required")
-	}
-
-	bcryptPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	exporter, err := otlptracegrpc.New(context.Background(),
+		otlptracegrpc.WithEndpoint("localhost:4317"),
+		otlptracegrpc.WithInsecure(),
+	)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to hash password")
+		log.Printf("Failed to create OTLP exporter: %v", err)
+		return func() {}
 	}
 
-	userID := fmt.Sprintf("user_%d", len(s.users)+1)
-	s.users[req.Username] = user{
-		ID:       userID,
-		Username: req.Username,
-		Password: string(bcryptPassword),
-	}
+	res := resource.Default()
+	tp := trace.NewTracerProvider(
+		trace.WithBatcher(exporter),
+		trace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
 
-	return &auth.SignUpResponse{UserId: userID}, nil
-}
-
-func (s *authServer) SignIn(ctx context.Context, req *auth.SignInRequest) (*auth.SignInResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	user, exists := s.users[req.Username]
-	if !exists || bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)) != nil {
-		return nil, status.Error(codes.Unauthenticated, "invalid credentials")
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"user_id": user.ID,
-		"sub":     user.Username,
-	})
-	tokenString, err := token.SignedString(s.secret)
-	if err != nil {
-		return nil, status.Error(codes.Internal, "failed to generate token")
-	}
-
-	grpc.SetHeader(ctx, metadata.Pairs("x-auth-token", tokenString))
-
-	return &auth.SignInResponse{Token: tokenString}, nil
-}
-
-func (s *authServer) GetUserProfile(ctx context.Context, req *auth.GetUserProfileRequest) (*auth.GetUserProfileResponse, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	// Extract user_id from JWT claims
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "no metadata provided")
-	}
-
-	authToken, ok := md["authorization"]
-	if !ok || len(authToken) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "authorization token missing")
-	}
-
-	tokenString := strings.TrimPrefix(authToken[0], "Bearer ")
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+	return func() {
+		if err := tp.Shutdown(context.Background()); err != nil {
+			log.Printf("Error shutting down tracer provider: %v", err)
 		}
-		return s.secret, nil
-	})
-	if err != nil || !token.Valid {
-		return nil, status.Error(codes.Unauthenticated, "invalid token")
 	}
-
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "invalid token claims")
-	}
-
-	userID, ok := claims["user_id"].(string)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "invalid user_id in token")
-	}
-
-	username, ok := claims["sub"].(string)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "invalid username in token")
-	}
-
-	user, exists := s.users[username]
-	if !exists || user.ID != userID {
-		return nil, status.Error(codes.Unauthenticated, "user not found")
-	}
-
-	return &auth.GetUserProfileResponse{
-		UserId:   userID,
-		Username: username,
-	}, nil
-}
-
-// UnaryInterceptor for JWT validation
-func (s *authServer) UnaryInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	if info.FullMethod == "/auth.AuthService/SignUp" || info.FullMethod == "/auth.AuthService/SignIn" {
-		return handler(ctx, req)
-	}
-
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, status.Error(codes.Unauthenticated, "no metadata provided")
-	}
-
-	auth, ok := md["authorization"]
-	if !ok || len(auth) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "authorization token missing")
-	}
-
-	tokenString := strings.TrimPrefix(auth[0], "Bearer ")
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return s.secret, nil
-	})
-	if err != nil || !token.Valid {
-		return nil, status.Error(codes.Unauthenticated, "invalid token")
-	}
-
-	return handler(ctx, req)
 }
 
 func main() {
+	cleanup := initTracer()
+	defer cleanup()
+
 	lis, err := net.Listen("tcp", ":50051")
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	authSrv := NewAuthServer()
+	authSrv := auth.NewAuthServer()
+	mediaSrv := media.NewMediaServer()
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(authSrv.UnaryInterceptor),
+		grpc.StreamInterceptor(authSrv.StreamInterceptor),
 	)
-	auth.RegisterAuthServiceServer(server, authSrv)
+	pbAuth.RegisterAuthServiceServer(server, authSrv)
+	pbMedia.RegisterMediaServiceServer(server, mediaSrv)
 
 	go func() {
 		log.Printf("gRPC server listening at %v", lis.Addr())
@@ -210,8 +100,14 @@ func main() {
 		}),
 	)
 
-	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	err = auth.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, "localhost:50051", dialOpts)
+	dialOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	}
+	err = pbAuth.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, "localhost:50051", dialOpts)
+	if err != nil {
+		log.Fatalf("failed to register gateway: %v", err)
+	}
+	err = pbMedia.RegisterMediaServiceHandlerFromEndpoint(ctx, mux, "localhost:50051", dialOpts)
 	if err != nil {
 		log.Fatalf("failed to register gateway: %v", err)
 	}

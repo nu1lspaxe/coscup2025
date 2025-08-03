@@ -20,17 +20,19 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
-	"coscup2025/proto/auth"
+	pbAuth "coscup2025/proto/auth"
+
+	"coscup2025/auth"
 )
 
 func setupTestServer(t *testing.T) (*grpc.Server, *runtime.ServeMux, *bufconn.Listener) {
 	lis := bufconn.Listen(1024 * 1024)
 
-	authSrv := NewAuthServer()
+	authSrv := auth.NewAuthServer()
 	server := grpc.NewServer(
 		grpc.UnaryInterceptor(authSrv.UnaryInterceptor),
 	)
-	auth.RegisterAuthServiceServer(server, authSrv)
+	pbAuth.RegisterAuthServiceServer(server, authSrv)
 
 	go func() {
 		if err := server.Serve(lis); err != nil {
@@ -65,7 +67,7 @@ func setupTestServer(t *testing.T) (*grpc.Server, *runtime.ServeMux, *bufconn.Li
 			return lis.Dial()
 		}),
 	}
-	err := auth.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, "localhost:50051", dialOpts)
+	err := pbAuth.RegisterAuthServiceHandlerFromEndpoint(ctx, mux, "localhost:50051", dialOpts)
 	if err != nil {
 		t.Fatalf("failed to register gateway: %v", err)
 	}
@@ -78,7 +80,7 @@ func TestGetUserProfileHeaderAuthentication(t *testing.T) {
 	defer server.Stop()
 	defer lis.Close()
 
-	makeRequest := func(t *testing.T, token string) (*http.Response, *auth.GetUserProfileResponse) {
+	makeRequest := func(t *testing.T, token string) (*http.Response, *pbAuth.GetUserProfileResponse) {
 		req, err := http.NewRequest("GET", "/v1/profile", nil)
 		require.NoError(t, err, "Failed to create request")
 		if token != "" {
@@ -88,7 +90,7 @@ func TestGetUserProfileHeaderAuthentication(t *testing.T) {
 		mux.ServeHTTP(rr, req)
 		resp := rr.Result()
 
-		var profile auth.GetUserProfileResponse
+		var profile pbAuth.GetUserProfileResponse
 		if resp.StatusCode == http.StatusOK {
 			body, err := io.ReadAll(resp.Body)
 			require.NoError(t, err, "Failed to read response body")
@@ -100,7 +102,7 @@ func TestGetUserProfileHeaderAuthentication(t *testing.T) {
 	}
 
 	// Step 1: Sign up a user
-	signUpReq := &auth.SignUpRequest{Username: "testuser", Password: "testpass"}
+	signUpReq := &pbAuth.SignUpRequest{Username: "testuser", Password: "testpass"}
 	signUpJSON, err := json.Marshal(signUpReq)
 	require.NoError(t, err, "Failed to marshal SignUp request")
 	req, err := http.NewRequest("POST", "/v1/signup", bytes.NewBuffer(signUpJSON))
@@ -111,7 +113,7 @@ func TestGetUserProfileHeaderAuthentication(t *testing.T) {
 	require.Equal(t, http.StatusOK, rr.Code, "SignUp failed")
 
 	// Step 2: Sign in to get a JWT token
-	signInReq := &auth.SignInRequest{Username: "testuser", Password: "testpass"}
+	signInReq := &pbAuth.SignInRequest{Username: "testuser", Password: "testpass"}
 	signInJSON, err := json.Marshal(signInReq)
 	require.NoError(t, err, "Failed to marshal SignIn request")
 	req, err = http.NewRequest("POST", "/v1/signin", bytes.NewBuffer(signInJSON))
@@ -121,7 +123,7 @@ func TestGetUserProfileHeaderAuthentication(t *testing.T) {
 	mux.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code, "SignIn failed")
 
-	var signInResp auth.SignInResponse
+	var signInResp pbAuth.SignInResponse
 	err = json.NewDecoder(rr.Body).Decode(&signInResp)
 	require.NoError(t, err, "Failed to decode SignIn response")
 	token := signInResp.Token
