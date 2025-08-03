@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	chunkSize = 1024 * 1024 // 1MB chunks
+	chunkSize = 1024 * 1024
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 	videoID := os.Args[2]
 	videoFilePath := os.Args[3]
 
-	conn, err := grpc.Dial("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("Failed to connect to server: %v", err)
 	}

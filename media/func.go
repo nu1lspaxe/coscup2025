@@ -188,21 +188,16 @@ func (s *mediaServer) DownloadVideo(req *media.DownloadVideoRequest, stream medi
 
 	var chunksSent int64
 	for i := 0; i < len(videoData); i += chunkSize {
-		end := i + chunkSize
-		if end > len(videoData) {
-			end = len(videoData)
-		}
+		end := min(i+chunkSize, len(videoData))
 
 		chunkSequence := int64(i/chunkSize + 1)
 
-		// Create response with metadata only in first chunk
 		response := &media.DownloadVideoResponse{
 			VideoId:  req.VideoId,
 			Data:     videoData[i:end],
 			Sequence: chunkSequence,
 		}
 
-		// Include metadata only in the first chunk
 		if chunkSequence == 1 {
 			response.Metadata = videoInfo.Metadata
 		}
