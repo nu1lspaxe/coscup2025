@@ -58,7 +58,9 @@ func (s *authServer) SignIn(ctx context.Context, req *auth.SignInRequest) (*auth
 		return nil, status.Error(codes.Internal, "failed to generate token")
 	}
 
-	grpc.SetHeader(ctx, metadata.Pairs("x-auth-token", tokenString))
+	if err := grpc.SetHeader(ctx, metadata.Pairs("x-auth-token", tokenString)); err != nil {
+		return nil, err
+	}
 
 	return &auth.SignInResponse{Token: tokenString}, nil
 }

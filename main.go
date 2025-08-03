@@ -13,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -40,7 +41,17 @@ func initTracer() func() {
 		return func() {}
 	}
 
-	res := resource.Default()
+	res, err := resource.New(context.Background(),
+		resource.WithAttributes(
+			semconv.ServiceName("coscup2025-service"),
+			semconv.ServiceVersion("1.0.0"),
+		),
+	)
+	if err != nil {
+		log.Printf("Failed to create resource: %v", err)
+		return func() {}
+	}
+
 	tp := trace.NewTracerProvider(
 		trace.WithBatcher(exporter),
 		trace.WithResource(res),
