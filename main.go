@@ -9,11 +9,11 @@ import (
 
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	"go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -43,8 +43,8 @@ func initTracer() func() {
 
 	res, err := resource.New(context.Background(),
 		resource.WithAttributes(
-			semconv.ServiceName("coscup2025-service"),
-			semconv.ServiceVersion("1.0.0"),
+			attribute.String("service.name", "coscup2025-service"),
+			attribute.String("service.version", "1.0.0"),
 		),
 	)
 	if err != nil {
