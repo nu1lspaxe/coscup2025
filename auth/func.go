@@ -47,7 +47,7 @@ func (s *authServer) SignIn(ctx context.Context, req *auth.SignInRequest) (*auth
 		return nil, status.Error(codes.Unauthenticated, "invalid credentials")
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": user.ID,
 		"sub":     user.Username,
 		"iat":     time.Now().Unix(),
